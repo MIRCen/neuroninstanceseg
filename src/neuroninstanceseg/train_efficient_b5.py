@@ -14,12 +14,12 @@ from .loss import dice_coef_rounded_ch0, dice_coef_rounded_ch1, schedule_steps, 
 import tensorflow.keras.backend as K
 import pandas as pd
 from tqdm import tqdm
-from  .transforms import aug_mega_hardcore
+from .transforms import aug_mega_hardcore
 from tensorflow.keras import metrics
 from abc import abstractmethod
 from tensorflow.keras.preprocessing.image import Iterator
 import time
-from  .efficientunet import *
+from .efficientunet import *
 import argparse
 
 def main():
@@ -62,7 +62,7 @@ def main():
         all_images.append(img)
         all_masks.append(msk)
             
-    batch_size = 8
+    batch_size = 2
     val_batch = 1
 
     
@@ -110,69 +110,125 @@ def main():
         lrSchedule = LearningRateScheduler(lambda epoch: schedule_steps(epoch, [(1e-5, 2), (3e-4, 4), (1e-4, 6)]))
 
         model = get_efficient_unet_b5((224, 224, 3), 3, pretrained=True, block_type='transpose', concat_input=True)
-        model.compile(loss=softmax_dice_loss,
-                        optimizer=Adam(lr=3e-4, amsgrad=True),
-                        metrics=[dice_coef_rounded_ch0, dice_coef_rounded_ch1, metrics.categorical_crossentropy])
-        model.fit(data_gen,
-                  use_multiprocessing=True,
-                  epochs=6, steps_per_epoch=steps_per_epoch, verbose=1,
-                  validation_data=val_data_generator(all_images, all_masks, val_idx, val_batch, validation_steps),
-                  validation_steps=validation_steps,
-                  callbacks=[lrSchedule],
-                  max_queue_size=5,
-                  workers=6)
-
-        lrSchedule = LearningRateScheduler(lambda epoch: schedule_steps(epoch, [(5e-6, 2), (2e-4, 10), (1e-4, 40), (5e-5, 55), (2e-5, 65), (1e-5, 70)]))
+        model.compile(
+            loss=softmax_dice_loss,
+            optimizer=Adam(learning_rate=3e-4, amsgrad=True),
+            metrics=[
+                dice_coef_rounded_ch0,
+                dice_coef_rounded_ch1,
+                metrics.categorical_crossentropy,
+            ],
+        )
+        model.fit(
+            data_gen,
+            epochs=6,
+            steps_per_epoch=steps_per_epoch,
+            verbose=1,
+            validation_data=val_data_generator(
+                all_images, all_masks, val_idx, val_batch, validation_steps
+            ),
+            validation_steps=validation_steps,
+            callbacks=[lrSchedule],
+        )
+        # set nb of epochs to 10 to debug
+        lrSchedule = LearningRateScheduler(
+            lambda epoch: schedule_steps(
+                epoch,
+                [(5e-6, 2), (2e-4, 10)],
+            )
+        )
         for l in model.layers:
             l.trainable = True
 
-        model.compile(loss=softmax_dice_loss,
-                        optimizer=Adam(lr=5e-6, amsgrad=True),
-                        metrics=[dice_coef_rounded_ch0, dice_coef_rounded_ch1, metrics.categorical_crossentropy])
+        model.compile(
+            loss=softmax_dice_loss,
+            optimizer=Adam(learning_rate=5e-6, amsgrad=True),
+            metrics=[
+                dice_coef_rounded_ch0,
+                dice_coef_rounded_ch1,
+                metrics.categorical_crossentropy,
+            ],
+        )
 
-        model_checkpoint = ModelCheckpoint(path.join(models_folder, 'efficient_b5_weights_{0}.h5'.format(it)), monitor='val_loss', 
-                                            save_best_only=True, save_weights_only=True, mode='min')                                            
-        model.fit(data_gen,
-                  use_multiprocessing=True,
-                  epochs=70, steps_per_epoch=steps_per_epoch, verbose=1,
-                  validation_data=val_data_generator(all_images, all_masks, val_idx, val_batch, validation_steps),
-                  validation_steps=validation_steps,
-                  callbacks=[lrSchedule, model_checkpoint, csv_logger],
-                  max_queue_size=5,
-                  workers=6)
+        model_checkpoint = ModelCheckpoint(
+            path.join(models_folder, "efficient_b5_weights_{0}.weights.h5".format(it)),
+            monitor="val_loss",
+            save_best_only=True,
+            save_weights_only=True,
+            mode="min",
+        )
+        model.fit(
+            data_gen,
+            epochs=10, # debug purpose
+            steps_per_epoch=steps_per_epoch,
+            verbose=1,
+            validation_data=val_data_generator(
+                all_images, all_masks, val_idx, val_batch, validation_steps
+            ),
+            validation_steps=validation_steps,
+            callbacks=[lrSchedule, model_checkpoint, csv_logger],
+        )
 
         del model
         del model_checkpoint
         K.clear_session()
-        
-        np.random.seed(it+222)
-        random.seed(it+222)
-        tf.random.set_seed(it+222)
-        
-        model = get_efficient_unet_b5((224, 224, 3), 3, pretrained=False, block_type='transpose', concat_input=True)
-        model.load_weights(path.join(models_folder, 'efficient_b5_weights_{0}.h5'.format(it)))
-        lrSchedule = LearningRateScheduler(lambda epoch: schedule_steps(epoch, [(1e-6, 72), (3e-5, 80), (2e-5, 90), (1e-5, 100)]))
 
-        model.compile(loss=softmax_dice_loss,
-                        optimizer=Adam(lr=1e-5, amsgrad=True),
-                        metrics=[dice_coef_rounded_ch0, dice_coef_rounded_ch1, metrics.categorical_crossentropy])
+        # np.random.seed(it + 222)
+        # random.seed(it + 222)
+        # tf.random.set_seed(it + 222)
 
-        model_checkpoint2 = ModelCheckpoint(path.join(models_folder, 'efficient_b5_weights_{0}.h5'.format(it)), monitor='val_loss', 
-                                            save_best_only=True, save_weights_only=True, mode='min')                                            
-        model.fit(data_gen,
-                  use_multiprocessing=True,
-                  epochs=100, steps_per_epoch=steps_per_epoch, verbose=1,
-                  validation_data=val_data_generator(all_images, all_masks, val_idx, val_batch, validation_steps),
-                  validation_steps=validation_steps,
-                  callbacks=[lrSchedule, model_checkpoint2],
-                  max_queue_size=5,
-                  workers=6,
-                  initial_epoch=92)
-        
-        del model
-        del model_checkpoint2
-        K.clear_session()
-        
+        # model = get_efficient_unet_b5(
+        #     (224, 224, 3),
+        #     3,
+        #     pretrained=False,
+        #     block_type="transpose",
+        #     concat_input=True,
+        # )
+        # model.load_weights(
+        #     path.join(models_folder, "efficient_b5_weights_{0}.h5".format(it))
+        # )
+        # lrSchedule = LearningRateScheduler(
+        #     lambda epoch: schedule_steps(
+        #         epoch, [(1e-6, 72), (3e-5, 80), (2e-5, 90), (1e-5, 100)]
+        #     )
+        # )
+
+        # model.compile(
+        #     loss=softmax_dice_loss,
+        #     optimizer=Adam(learning_rate=1e-5, amsgrad=True),
+        #     metrics=[
+        #         dice_coef_rounded_ch0,
+        #         dice_coef_rounded_ch1,
+        #         metrics.categorical_crossentropy,
+        #     ],
+        # )
+
+        # model_checkpoint2 = ModelCheckpoint(
+        #     path.join(models_folder, "efficient_b5_weights_{0}.h5".format(it)),
+        #     monitor="val_loss",
+        #     save_best_only=True,
+        #     save_weights_only=True,
+        #     mode="min",
+        # )
+        # model.fit(
+        #     data_gen,
+        #     epochs=100,
+        #     steps_per_epoch=steps_per_epoch,
+        #     verbose=1,
+        #     validation_data=val_data_generator(
+        #         all_images, all_masks, val_idx, val_batch, validation_steps
+        #     ),
+        #     validation_steps=validation_steps,
+        #     callbacks=[lrSchedule, model_checkpoint2],
+        #     max_queue_size=5,
+        #     workers=6,
+        #     initial_epoch=92,
+        # )
+
+        # del model
+        # del model_checkpoint2
+        # K.clear_session()
+
     elapsed = timeit.default_timer() - t0
     print('Time: {:.3f} min'.format(elapsed / 60))
 

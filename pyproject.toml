@@ -34,7 +34,7 @@ packages = ["src/neuroninstanceseg"]
 
 [tool.pixi.workspace]
 channels = ["nvidia/label/cuda-11.8.0", "conda-forge", "bioconda", "pytorch"]
-platforms = ["linux-64"]
+platforms = ["linux-64", "osx-arm64"]
 
 [tool.pixi.activation]
 env = { XLA_FLAGS="--xla_gpu_cuda_data_dir=$PIXI_PROJECT_ROOT/.pixi/envs/$PIXI_ENVIRONMENT_NAME", TF_XLA_FLAGS="--tf_xla_enable_xla_devices", SSL_CERT_FILE="$PIXI_PROJECT_ROOT/.pixi/envs/$PIXI_ENVIRONMENT_NAME/ssl/cacert.pem" }
@@ -46,13 +46,22 @@ cuda = "11.8"
 setuptools = "*"
 pip = "*"
 hatchling = "*"
-gcc = "*"
-imgaug = "0.4.0"
-keras = "2.4.3" # Recommended: 2.3.1
-numpy = "1.19.5"
+imgaug = ">=0.4.0"
 py-opencv = "*" # Recommended: opencv_contrib_python 4.6.0.66
-pandas = "1.1.5" # Recommended: 1.1.5
-scikit-image = "0.17.2"
-scipy = "1.9.1" # Recommended: 1.1.0
+pandas = ">=1.1.5" # Recommended: 1.1.5
+scikit-image = ">=0.17.2"
+scipy = ">=1.9.1" # Recommended: 1.1.0
+tqdm = ">=4.56.0"
+
+[tool.pixi.target.linux-64.dependencies]
+gcc = "*"
 tensorflow = "2.4.0"
-tqdm = "4.56.0"
+keras = "2.4.3"
+numpy = "1.19.5"
+
+[tool.pixi.target.osx-arm64.dependencies]
+tensorflow = ">=2.9"
+keras = ">=2.9"
+numpy = ">=1.20,<1.24"
+scikit-image = ">=0.19,<0.20"
+

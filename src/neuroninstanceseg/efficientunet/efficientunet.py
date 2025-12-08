@@ -81,19 +81,6 @@ def Conv2DTranspose_block(filters, kernel_size=(3, 3), transpose_kernel_size=(2,
     return layer
 
 
-def Conv2DTranspose_block_last(filters, kernel_size=(3, 3), transpose_kernel_size=(2, 2), upsample_rate=(2, 2),
-                          initializer='glorot_uniform', skip=None):
-    def layer(input_tensor):
-
-        x = Conv2DTranspose(filters, transpose_kernel_size, strides=upsample_rate, padding='same')(input_tensor)
-
-        if skip is not None:
-            x = Concatenate()([x, skip])
-
-        return x
-
-    return layer
-
 # noinspection PyTypeChecker
 def _get_efficient_unet(encoder, out_channels=3, block_type='upsampling', concat_input=True):
     MBConvBlocks = []
@@ -122,19 +109,18 @@ def _get_efficient_unet(encoder, out_channels=3, block_type='upsampling', concat
     o = UpBlock(128, initializer=conv_kernel_initializer, skip=blocks.pop())(o)
     o = UpBlock(64, initializer=conv_kernel_initializer, skip=blocks.pop())(o)
     if concat_input:
-        # out = UpBlock(32, initializer=conv_kernel_initializer, skip=blocks.pop())(o)
-        # out_center = UpBlock(32, initializer=conv_kernel_initializer, skip=blocks.pop())(o)
-        o = Conv2DTranspose_block_last(32, initializer=conv_kernel_initializer, skip=blocks[0])(o)
+        o = UpBlock(32, initializer=conv_kernel_initializer, skip=blocks.pop())(o)
     else:
-        o = Conv2DTranspose_block_last(32, initializer=conv_kernel_initializer, skip=None)(o)
+        o = UpBlock(32, initializer=conv_kernel_initializer, skip=None)(o)
 
-    # out = DoubleConv(32, kernel_size=(3, 3), initializer=conv_kernel_initializer)(o)
-    out_center = DoubleConv(32, kernel_size=(3, 3), initializer=conv_kernel_initializer)(o)
+    o = Conv2D(
+        out_channels,
+        (1, 1),
+        padding="same",
+        kernel_initializer=conv_kernel_initializer,
+    )(o)
 
-    # out = Conv2D(out_channels, (1, 1), padding='same', kernel_initializer=conv_kernel_initializer, activation='softmax', name='out')(out)
-    out_center = Conv2D(1, (1, 1), padding='same', kernel_initializer=conv_kernel_initializer, activation='linear', name='out_center')(out_center)
-
-    model = models.Model(inputs=encoder.input, outputs=out_center)
+    model = models.Model(encoder.input, o)
 
     return model
 
