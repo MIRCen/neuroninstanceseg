@@ -1,5 +1,13 @@
 import random
 import numpy as np
+
+# Monkey-patch scipy.spatial.Delaunay to add 'vertices' alias for compatibility with imgaug
+# In newer scipy versions, 'vertices' was renamed to 'simplices'
+from scipy.spatial import Delaunay
+
+if not hasattr(Delaunay, "vertices"):
+    Delaunay.vertices = property(lambda self: self.simplices)
+
 from .augmentations.composition import Compose, OneOf
 from .augmentations import functional as F
 from imgaug import augmenters as iaa

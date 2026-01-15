@@ -259,19 +259,19 @@ class DropConnect(layers.Layer):
         super().__init__(**kwargs)
         self.drop_connect_rate = drop_connect_rate
 
-    def call(self, inputs, **kwargs):
-        def drop_connect():
-            keep_prob = 1.0 - self.drop_connect_rate
+    def call(self, inputs, training=None):
+        if not training:
+            return inputs
 
-            # Compute drop_connect tensor
-            batch_size = tf.shape(inputs)[0]
-            random_tensor = keep_prob
-            random_tensor += tf.random.uniform([batch_size, 1, 1, 1], dtype=inputs.dtype)
-            binary_tensor = tf.floor(random_tensor)
-            output = tf.math.divide(inputs, keep_prob) * binary_tensor
-            return output
+        keep_prob = 1.0 - self.drop_connect_rate
 
-        return K.in_train_phase(drop_connect(), inputs, training=None)
+        # Compute drop_connect tensor
+        batch_size = tf.shape(inputs)[0]
+        random_tensor = keep_prob
+        random_tensor += tf.random.uniform([batch_size, 1, 1, 1], dtype=inputs.dtype)
+        binary_tensor = tf.floor(random_tensor)
+        output = tf.math.divide(inputs, keep_prob) * binary_tensor
+        return output
 
     def get_config(self):
         config = super().get_config()
