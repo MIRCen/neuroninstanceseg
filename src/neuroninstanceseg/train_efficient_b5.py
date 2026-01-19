@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from os import path, mkdir
 import numpy as np
@@ -10,16 +11,16 @@ import timeit
 import cv2
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger  #, TensorBoard
-from .loss import dice_coef_rounded_ch0, dice_coef_rounded_ch1, schedule_steps, softmax_dice_loss
+from neuroninstanceseg.loss import dice_coef_rounded_ch0, dice_coef_rounded_ch1, schedule_steps, softmax_dice_loss
 import tensorflow.keras.backend as K
 import pandas as pd
 from tqdm import tqdm
-from .transforms import aug_mega_hardcore
+from neuroninstanceseg.transforms import aug_mega_hardcore
 from tensorflow.keras import metrics
 from abc import abstractmethod
 from tensorflow.keras.preprocessing.image import Iterator
 import time
-from .efficientunet import *
+from neuroninstanceseg.efficientunet import *
 import argparse
 
 def main():

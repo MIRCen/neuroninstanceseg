@@ -2,6 +2,5 @@ dist
 pixi.lock
 data
 model
-src/neuroninstanceseg/__pycache__
-src/neuroninstanceseg/efficientunet/__pycache__
+**/__pycache__/
 .DS_Store

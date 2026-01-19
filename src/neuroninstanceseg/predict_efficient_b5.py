@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from os import path, mkdir, listdir
 import numpy as np
@@ -9,7 +10,7 @@ tf.random.set_seed(1)
 import timeit
 import cv2
 from tqdm import tqdm
-from .efficientunet import *
+from neuroninstanceseg.efficientunet import *
 import os
 import argparse
 

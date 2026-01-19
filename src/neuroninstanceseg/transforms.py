@@ -8,8 +8,8 @@ from scipy.spatial import Delaunay
 if not hasattr(Delaunay, "vertices"):
     Delaunay.vertices = property(lambda self: self.simplices)
 
-from .augmentations.composition import Compose, OneOf
-from .augmentations import functional as F
+from neuroninstanceseg.augmentations.composition import Compose, OneOf
+from neuroninstanceseg.augmentations import functional as F
 from imgaug import augmenters as iaa
 
 def to_tuple(param, low=None):
