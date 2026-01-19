@@ -10,16 +10,16 @@ import timeit
 import cv2
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger  #, TensorBoard
-from .loss import dice_coef_rounded_ch0, dice_coef_rounded_ch1, schedule_steps, softmax_dice_loss
+from loss import dice_coef_rounded_ch0, dice_coef_rounded_ch1, schedule_steps, softmax_dice_loss
 import tensorflow.keras.backend as K
 import pandas as pd
 from tqdm import tqdm
-from .transforms import aug_mega_hardcore
+from transforms import aug_mega_hardcore
 from tensorflow.keras import metrics
 from abc import abstractmethod
 from tensorflow.keras.preprocessing.image import Iterator
 import time
-from .efficientunet import *
+from efficientunet import *
 import argparse
 
 def main():
@@ -90,15 +90,16 @@ def main():
         print('steps_per_epoch', steps_per_epoch, 'validation_steps', validation_steps)
 
         data_gen = BaseMaskDatasetIterator(
-                     all_images, 
-                     all_masks,
-                     train_idx,
-                     random_transformers=[aug_mega_hardcore((-0.25, 0.6)), aug_mega_hardcore((-0.6, 0.25))],
-                     batch_size=batch_size,
-                     shuffle=True,
-                     seed=1,
-                     input_shape=input_shape
-                     )
+            all_images, 
+            all_masks,
+            train_idx,
+            random_transformers=[aug_mega_hardcore((-0.25, 0.6)), aug_mega_hardcore((-0.6, 0.25))],
+            batch_size=batch_size,
+            shuffle=True,
+            seed=1,
+            input_shape=input_shape,
+            samples_per_epoch=5 * len(train_idx)  # See each sample ~5 times
+        )
 
         
         np.random.seed(it+111)
@@ -107,127 +108,102 @@ def main():
         
         log_file = path.join(models_folder, 'efficient_b5_weights_{0}.log'.format(it))           
         csv_logger = CSVLogger(log_file, separator=',', append=False)
-        lrSchedule = LearningRateScheduler(lambda epoch: schedule_steps(epoch, [(1e-5, 2), (3e-4, 4), (1e-4, 6)]))
+        # lrSchedule = LearningRateScheduler(lambda epoch: schedule_steps(epoch, [(1e-5, 2), (3e-4, 4), (1e-4, 6)]))
+        lrSchedule = LearningRateScheduler(
+            lambda epoch: schedule_steps(epoch, [
+                (1e-5, 1),
+                (5e-5, 2),   # Gradual warmup
+                (1e-4, 3),
+                (2e-4, 4),
+                (3e-4, 6)
+            ])
+        )
 
         model = get_efficient_unet_b5((224, 224, 3), 3, pretrained=True, block_type='transpose', concat_input=True)
+
         model.compile(
             loss=softmax_dice_loss,
-            optimizer=Adam(learning_rate=3e-4, amsgrad=True),
-            metrics=[
-                dice_coef_rounded_ch0,
-                dice_coef_rounded_ch1,
-                metrics.categorical_crossentropy,
-            ],
-        )
+            optimizer=Adam(learning_rate=3e-4, amsgrad=True, clipnorm=1.0),
+            metrics=[dice_coef_rounded_ch0, dice_coef_rounded_ch1, metrics.categorical_crossentropy]
+            )
+        
         model.fit(
             data_gen,
-            epochs=6,
-            steps_per_epoch=steps_per_epoch,
-            verbose=1,
+            epochs=6, steps_per_epoch=steps_per_epoch, verbose=1,
             validation_data=val_data_generator(
                 all_images, all_masks, val_idx, val_batch, validation_steps
-            ),
+                ),
             validation_steps=validation_steps,
             callbacks=[lrSchedule],
-        )
-        # set nb of epochs to 10 to debug
-        lrSchedule = LearningRateScheduler(
-            lambda epoch: schedule_steps(
-                epoch,
-                [(5e-6, 2), (2e-4, 10)],
             )
-        )
+
+        lrSchedule = LearningRateScheduler(lambda epoch: schedule_steps(epoch, [(5e-6, 2), (2e-4, 10), (1e-4, 40), (5e-5, 55), (2e-5, 65), (1e-5, 70)]))
         for l in model.layers:
             l.trainable = True
 
         model.compile(
             loss=softmax_dice_loss,
-            optimizer=Adam(learning_rate=5e-6, amsgrad=True),
-            metrics=[
-                dice_coef_rounded_ch0,
-                dice_coef_rounded_ch1,
-                metrics.categorical_crossentropy,
-            ],
-        )
+            optimizer=Adam(learning_rate=5e-6, amsgrad=True, clipnorm=1.0),
+            metrics=[dice_coef_rounded_ch0, dice_coef_rounded_ch1, metrics.categorical_crossentropy]
+            )
 
         model_checkpoint = ModelCheckpoint(
-            path.join(models_folder, "efficient_b5_weights_{0}.weights.h5".format(it)),
-            monitor="val_loss",
-            save_best_only=True,
-            save_weights_only=True,
-            mode="min",
-        )
+            path.join(models_folder, 'efficient_b5_weights_{0}.weights.h5'.format(it)), 
+            monitor='val_loss', 
+            save_best_only=True, 
+            save_weights_only=True, 
+            mode='min'
+            )     
+                                               
         model.fit(
-            data_gen,
-            epochs=10, # debug purpose
-            steps_per_epoch=steps_per_epoch,
-            verbose=1,
+            data_gen, 
+            epochs=70, 
+            steps_per_epoch=steps_per_epoch, verbose=1,
             validation_data=val_data_generator(
                 all_images, all_masks, val_idx, val_batch, validation_steps
-            ),
+                ),
             validation_steps=validation_steps,
             callbacks=[lrSchedule, model_checkpoint, csv_logger],
-        )
+            )
 
         del model
         del model_checkpoint
         K.clear_session()
+        
+        np.random.seed(it+222)
+        random.seed(it+222)
+        tf.random.set_seed(it+222)
+        
+        model = get_efficient_unet_b5((224, 224, 3), 3, pretrained=False, block_type='transpose', concat_input=True)
+        model.load_weights(path.join(models_folder, 'efficient_b5_weights_{0}.weights.h5'.format(it)))
+        lrSchedule = LearningRateScheduler(lambda epoch: schedule_steps(epoch, [(1e-6, 72), (3e-5, 80), (2e-5, 90), (1e-5, 100)]))
 
-        # np.random.seed(it + 222)
-        # random.seed(it + 222)
-        # tf.random.set_seed(it + 222)
+        model.compile(
+            loss=softmax_dice_loss,
+            optimizer=Adam(learning_rate=1e-5, amsgrad=True, clipnorm=1.0),
+            metrics=[dice_coef_rounded_ch0, dice_coef_rounded_ch1, metrics.categorical_crossentropy]
+            )
 
-        # model = get_efficient_unet_b5(
-        #     (224, 224, 3),
-        #     3,
-        #     pretrained=False,
-        #     block_type="transpose",
-        #     concat_input=True,
-        # )
-        # model.load_weights(
-        #     path.join(models_folder, "efficient_b5_weights_{0}.h5".format(it))
-        # )
-        # lrSchedule = LearningRateScheduler(
-        #     lambda epoch: schedule_steps(
-        #         epoch, [(1e-6, 72), (3e-5, 80), (2e-5, 90), (1e-5, 100)]
-        #     )
-        # )
-
-        # model.compile(
-        #     loss=softmax_dice_loss,
-        #     optimizer=Adam(learning_rate=1e-5, amsgrad=True),
-        #     metrics=[
-        #         dice_coef_rounded_ch0,
-        #         dice_coef_rounded_ch1,
-        #         metrics.categorical_crossentropy,
-        #     ],
-        # )
-
-        # model_checkpoint2 = ModelCheckpoint(
-        #     path.join(models_folder, "efficient_b5_weights_{0}.h5".format(it)),
-        #     monitor="val_loss",
-        #     save_best_only=True,
-        #     save_weights_only=True,
-        #     mode="min",
-        # )
-        # model.fit(
-        #     data_gen,
-        #     epochs=100,
-        #     steps_per_epoch=steps_per_epoch,
-        #     verbose=1,
-        #     validation_data=val_data_generator(
-        #         all_images, all_masks, val_idx, val_batch, validation_steps
-        #     ),
-        #     validation_steps=validation_steps,
-        #     callbacks=[lrSchedule, model_checkpoint2],
-        #     max_queue_size=5,
-        #     workers=6,
-        #     initial_epoch=92,
-        # )
-
-        # del model
-        # del model_checkpoint2
-        # K.clear_session()
+        model_checkpoint2 = ModelCheckpoint(
+            path.join(models_folder, 'efficient_b5_weights_{0}.weights.h5'.format(it)), 
+            monitor='val_loss', 
+            save_best_only=True, 
+            save_weights_only=True, 
+            mode='min')      
+                                              
+        model.fit(
+            data_gen,
+            epochs=100, steps_per_epoch=steps_per_epoch, verbose=1,
+            validation_data=val_data_generator(
+                all_images, all_masks, val_idx, val_batch, validation_steps
+            ),
+            validation_steps=validation_steps,
+            callbacks=[lrSchedule, model_checkpoint2],
+            initial_epoch=71)
+        
+        del model
+        del model_checkpoint2
+        K.clear_session()
 
     elapsed = timeit.default_timer() - t0
     print('Time: {:.3f} min'.format(elapsed / 60))
@@ -256,30 +232,36 @@ class BaseMaskDatasetIterator(Iterator):
                  batch_size=8,
                  shuffle=True,
                  seed=None,
-                 input_shape = (224, 224)):
+                 input_shape=(224, 224),
+                 samples_per_epoch=None):  # Add this parameter
+        
         self.image_ids = image_ids
         self.random_transformers = random_transformers
         self.all_images = all_images
         self.all_masks = all_masks
         self.input_shape = input_shape
+        
         if seed is None:
             seed = np.uint32(time.time() * 1000)
-
-        super(BaseMaskDatasetIterator, self).__init__(len(self.image_ids), batch_size, shuffle, seed)
-
-    @abstractmethod
-    def transform_mask(self, mask, image):
-        raise NotImplementedError
-
-    def transform_batch_y(self, batch_y):
-        return batch_y
-
+        
+        # If we want to see each sample multiple times per epoch
+        if samples_per_epoch is None:
+            samples_per_epoch = len(self.image_ids)
+        
+        super(BaseMaskDatasetIterator, self).__init__(
+            samples_per_epoch,  # Use inflated count
+            batch_size, 
+            shuffle, 
+            seed
+        )
+    
     def _get_batches_of_transformed_samples(self, index_array):
         batch_x = []
         batch_y = []
 
         for batch_index, image_index in enumerate(index_array):
-            _idx = self.image_ids[image_index]
+            # Wrap around if index exceeds actual data size
+            _idx = self.image_ids[image_index % len(self.image_ids)]
             
             img0 = self.all_images[_idx].copy()
             msk0 = self.all_masks[_idx].copy()
@@ -309,7 +291,7 @@ class BaseMaskDatasetIterator(Iterator):
 
         batch_x = preprocess_inputs(batch_x)
 
-        return self.transform_batch_x(batch_x), self.transform_batch_y(batch_y)
+        return self.transform_batch_x(batch_x), batch_y
 
     def transform_batch_x(self, batch_x):
         return batch_x
@@ -326,28 +308,29 @@ def val_data_generator(all_images, all_masks, val_idx, batch_size, validation_st
         inputs = []
         outputs = []
         step_id = 0
+        
         for i in val_idx:
             img = all_images[i]
-            msk = all_masks[i].copy()            
-            msk = msk.astype('float')
+            msk = all_masks[i].copy()
+            
+            msk = msk.astype('float32')
             msk[..., 0] = (msk[..., 0] > 127) * 1
             msk[..., 1] = (msk[..., 1] > 127) * (msk[..., 0] == 0) * 1
             msk[..., 2] = (msk[..., 1] == 0) * (msk[..., 0] == 0) * 1
-            otp = msk
-
-            for j in range(batch_size):
-                inputs.append(img)
-                outputs.append(otp)
+            
+            inputs.append(img)
+            outputs.append(msk)
+            
             if len(inputs) == batch_size:
                 step_id += 1
-                inputs = np.asarray(inputs)
-                outputs = np.asarray(outputs, dtype='float')
-
+                inputs = np.asarray(inputs, dtype='float32')
+                outputs = np.asarray(outputs, dtype='float32')
                 inputs = preprocess_inputs(inputs)
-
+                
                 yield inputs, outputs
                 inputs = []
                 outputs = []
+                
                 if step_id == validation_steps:
                     break
                 
